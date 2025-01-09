@@ -313,12 +313,19 @@ This variable can be also be `let' bound when running `htmlize-buffer'.")
   "The mode the newly created HTML buffer will be put in.
 Set this to nil if you prefer the default (fundamental) mode."
   :type '(radio (const :tag "No mode (fundamental)" nil)
-                 (function-item html-mode)
-                 (function :tag "User-defined major mode"))
+                (function-item html-mode)
+                (function :tag "User-defined major mode"))
   :group 'htmlize)
 
 (defcustom htmlize-pre-style nil
   "When non-nil, `<pre>' tags will be decorated with style
+information in `font' and `inline-css' modes. This allows a
+consistent background for captures of regions."
+  :type 'boolean
+  :group 'htmlize)
+
+(defcustom htmlize-div-style nil
+  "When non-nil, `<div>' tags will be decorated with style
 information in `font' and `inline-css' modes. This allows a
 consistent background for captures of regions."
   :type 'boolean
@@ -1373,6 +1380,11 @@ it's called with the same value of KEY.  All other times, the cached
   face-map ; shut up the byte-compiler
   "<pre>")
 
+(defun htmlize-default-div-tag (face-map)
+  nil                                   ; no doc-string
+  face-map ; shut up the byte-compiler
+  "<div>")
+
 
 ;;; CSS based output support.
 
@@ -1469,6 +1481,14 @@ it's called with the same value of KEY.  All other times, the cached
                          " "))
     (format "<pre>")))
 
+(defun htmlize-inline-css-div-tag (face-map)
+  (if htmlize-div-style
+      (format "<div style=\"%s\">"
+              (mapconcat #'identity
+                         (htmlize-css-specs (gethash 'default face-map))
+                         " "))
+    (format "<div>")))
+
 (defun htmlize-inline-css-text-markup (fstruct-list buffer)
   (let* ((merged (htmlize-merge-faces fstruct-list))
          (style (htmlize-memoize
@@ -1502,6 +1522,14 @@ it's called with the same value of KEY.  All other times, the cached
                 (htmlize-fstruct-foreground fstruct)
                 (htmlize-fstruct-background fstruct)))
     (format "<pre>")))
+
+(defun htmlize-font-div-tag (face-map)
+  (if htmlize-div-style
+      (let ((fstruct (gethash 'default face-map)))
+        (format "<div text=\"%s\" bgcolor=\"%s\">"
+                (htmlize-fstruct-foreground fstruct)
+                (htmlize-fstruct-background fstruct)))
+    (format "<div>")))
 
 (defun htmlize-font-text-markup (fstruct-list buffer)
   ;; In `font' mode, we use the traditional HTML means of altering
@@ -1589,7 +1617,11 @@ it's called with the same value of KEY.  All other times, the cached
               (insert (htmlize-method body-tag face-map)
                       "\n    ")
               (put places 'content-start (point-marker))
-              (insert (htmlize-method pre-tag face-map) "\n"))
+              (if nil                   ;control
+                  (insert (htmlize-method pre-tag face-map) "\n")
+                (insert (htmlize-method div-tag face-map)))
+              (when t                   ;control
+                (insert "<div>")))
             (let ((text-markup
                    ;; Get the inserter method, so we can funcall it inside
                    ;; the loop.  Not calling `htmlize-method' in the loop
@@ -1628,7 +1660,23 @@ it's called with the same value of KEY.  All other times, the cached
                     (setq last-fstruct-list fstruct-list)
                     (setq close-markup
                           (funcall text-markup fstruct-list htmlbuf)))
-                  (princ text htmlbuf))
+                  ;; (princ text htmlbuf)
+                  (if (string-match-p "\n" text)
+                      (dolist (l (split-string text "\\(\n\\)"))
+                        (message "l =|%s||" l)
+                        (unless (= 0 (length l))
+                          (funcall close-markup)
+                          (princ "</div>" htmlbuf)
+                          (princ "<div>" htmlbuf)
+                          (funcall text-markup fstruct-list htmlbuf)
+                          (if (string= l "")
+                              (progn
+                                ;; (princ "<br>" htmlbuf)
+                                t)
+                            (princ l htmlbuf)
+                            ;; (princ "\n" htmlbuf)
+                            )))
+                    (princ text htmlbuf)))
                 (goto-char next-change))
 
               ;; We've gone through the buffer; close the markup from
@@ -1637,7 +1685,11 @@ it's called with the same value of KEY.  All other times, the cached
 
             ;; Insert the epilog and post-process the buffer.
             (with-current-buffer htmlbuf
-              (insert "</pre>")
+              (when t                   ;control
+                (insert "</div>"))
+              (if nil                   ;control
+                  (insert "</pre>")
+                (insert "</div>"))
               (put places 'content-end (point-marker))
               (insert "\n  </body>")
               (put places 'body-end (point-marker))
